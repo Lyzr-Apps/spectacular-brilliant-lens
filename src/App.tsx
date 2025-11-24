@@ -1,292 +1,486 @@
-import { useState } from 'react'
+'use client'
+
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { Copy, Share2, Loader2, CheckCircle2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { TrendingUp, TrendingDown, Loader2, RefreshCw, Users, Zap, MessageCircle, Eye, Heart } from 'lucide-react'
 import { callAIAgent } from '@/utils/aiAgent'
 import parseLLMJson from '@/utils/jsonParser'
 
-interface PoemResponse {
-  result?: {
-    poem: string
-    style: string
-    mood: string
-    topic: string
-    line_count: number
-    confidence: number
-  }
-  confidence?: number
-  metadata?: {
-    processing_time: string
-    style_compliance: string
-    mood_captured: boolean
-  }
-  poem?: string
-  style?: string
-  mood?: string
-  topic?: string
+interface TrendingTopic {
+  rank: number
+  topic: string
+  post_count: number
+  trend_direction: string
+  trend_percentage: number
 }
 
-const STYLES = [
-  { value: 'freeform', label: 'Freeform' },
-  { value: 'haiku', label: 'Haiku' },
-  { value: 'limerick', label: 'Limerick' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'free_verse', label: 'Free Verse' },
-  { value: 'acrostic', label: 'Acrostic' },
-]
+interface TopPost {
+  title: string
+  author: string
+  author_title: string
+  engagement: {
+    likes: number
+    comments: number
+    shares: number
+    views: number
+  }
+  sentiment: string
+  published_date: string
+  url: string
+}
 
-const MOODS = [
-  { value: 'romantic', label: 'Romantic' },
-  { value: 'funny', label: 'Funny' },
-  { value: 'sad', label: 'Sad' },
-  { value: 'inspirational', label: 'Inspirational' },
-  { value: 'mysterious', label: 'Mysterious' },
-  { value: 'peaceful', label: 'Peaceful' },
-]
+interface KeyInfluencer {
+  rank: number
+  name: string
+  title: string
+  post_count: number
+  avg_engagement: number
+  profile_url: string
+}
+
+interface LinkedInInsights {
+  result: {
+    trending_topics: TrendingTopic[]
+    top_posts: TopPost[]
+    key_influencers: KeyInfluencer[]
+    sentiment_analysis: {
+      positive: number
+      neutral: number
+      negative: number
+    }
+    engagement_metrics: {
+      avg_likes: number
+      avg_comments: number
+      avg_shares: number
+      total_posts_analyzed: number
+    }
+    content_themes: Array<{
+      theme: string
+      percentage: number
+      post_count: number
+    }>
+  }
+  status: string
+  confidence: number
+  metadata: {
+    processing_time: string
+    sources_used: string[]
+    timestamp: string
+    posts_analyzed: number
+    search_query_used: string
+  }
+}
 
 function App() {
-  const [topic, setTopic] = useState('')
-  const [style, setStyle] = useState('freeform')
-  const [mood, setMood] = useState('inspirational')
-  const [poem, setPoem] = useState('')
-  const [poemMetadata, setPoemMetadata] = useState<any>(null)
+  const [insights, setInsights] = useState<LinkedInInsights | null>(null)
   const [loading, setLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
+  const [dateRange, setDateRange] = useState('last_7_days')
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null)
 
-  const handleGeneratePoem = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!topic.trim()) {
-      setError('Please enter a topic or prompt')
-      return
-    }
-
+  const fetchInsights = async () => {
     setError('')
     setLoading(true)
-    setPoem('')
-    setPoemMetadata(null)
 
     try {
-      const prompt = `Generate a ${style} poem with a ${mood} mood about: "${topic}"`
+      const message = `Search LinkedIn for Agentic AI content and analyze it. Return insights in this exact JSON format:
+      {
+        "result": {
+          "trending_topics": [{"rank": 1, "topic": "#Topic", "post_count": 100, "trend_direction": "↑", "trend_percentage": 12.5}],
+          "top_posts": [{"title": "Post Title", "author": "Name", "author_title": "Title", "engagement": {"likes": 100, "comments": 10, "shares": 5, "views": 1000}, "sentiment": "positive", "published_date": "2024-01-15", "url": "https://linkedin.com/..."}],
+          "key_influencers": [{"rank": 1, "name": "Name", "title": "Title", "post_count": 10, "avg_engagement": 500, "profile_url": "https://linkedin.com/..."}],
+          "sentiment_analysis": {"positive": 65, "neutral": 25, "negative": 10},
+          "engagement_metrics": {"avg_likes": 450, "avg_comments": 35, "avg_shares": 18, "total_posts_analyzed": 150},
+          "content_themes": [{"theme": "Technical", "percentage": 35, "post_count": 52}]
+        },
+        "status": "success",
+        "confidence": 0.92,
+        "metadata": {"processing_time": "3.2s", "sources_used": ["LinkedIn web search"], "timestamp": "${new Date().toISOString()}", "posts_analyzed": 150, "search_query_used": "Agentic AI LinkedIn"}
+      }`
 
-      const response = await callAIAgent(prompt, '68fa9bdca39d463331e020cd')
+      const response = await callAIAgent(message, '6924cf95eb6b7de42273efcb', {
+        user_id: 'linkedin-insights-tracker',
+        session_id: `session-${Date.now()}`,
+      })
 
-      const parsedResponse = parseLLMJson(response.response, {})
+      if (response.success && response.response) {
+        const parsed = parseLLMJson(response.response, { attemptFix: true })
 
-      if (parsedResponse.result?.poem) {
-        setPoem(parsedResponse.result.poem)
-        setPoemMetadata(parsedResponse)
-      } else if (parsedResponse.poem) {
-        setPoem(parsedResponse.poem)
-        setPoemMetadata(parsedResponse)
+        if (parsed && parsed.result) {
+          setInsights(parsed as LinkedInInsights)
+          setLastUpdated(new Date().toLocaleString())
+        } else {
+          setError('Failed to parse insights from agent response. Please try again.')
+        }
       } else {
-        setError('Failed to generate poem. Please try again.')
+        setError(response.error || 'Failed to fetch insights. Please try again.')
       }
     } catch (err) {
-      setError('Error generating poem. Please try again.')
+      setError('Error fetching insights. Please try again.')
       console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(poem)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      setError('Failed to copy poem')
+  // Auto-fetch on mount
+  useEffect(() => {
+    fetchInsights()
+  }, [])
+
+  const getSentimentColor = (sentiment: string) => {
+    switch (sentiment.toLowerCase()) {
+      case 'positive':
+        return 'bg-green-50 border-green-200'
+      case 'negative':
+        return 'bg-red-50 border-red-200'
+      default:
+        return 'bg-gray-50 border-gray-200'
     }
   }
 
-  const handleShare = async () => {
-    if (!navigator.share) {
-      handleCopy()
-      return
-    }
-
-    try {
-      await navigator.share({
-        title: 'My Poem',
-        text: poem,
-      })
-    } catch (err) {
-      console.error('Share failed:', err)
+  const getSentimentBadgeColor = (sentiment: string) => {
+    switch (sentiment.toLowerCase()) {
+      case 'positive':
+        return 'bg-green-100 text-green-800'
+      case 'negative':
+        return 'bg-red-100 text-red-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4 py-12">
-      <Card className="w-full max-w-2xl shadow-lg border-0">
-        <CardHeader className="text-center pb-8">
-          <CardTitle className="text-4xl font-light tracking-tight text-slate-900">
-            Poem Generator
-          </CardTitle>
-          <p className="text-slate-500 text-sm mt-2 font-light">
-            Create beautiful poetry with AI
-          </p>
-        </CardHeader>
-
-        <CardContent className="space-y-6">
-          {/* Form Section */}
-          <form onSubmit={handleGeneratePoem} className="space-y-4">
-            {/* Topic Input */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Topic or Prompt</label>
-              <Input
-                type="text"
-                placeholder="Enter a poem topic or prompt…"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">Agentic AI Insights Tracker</h1>
+              <p className="text-slate-600 text-sm mt-1">LinkedIn Analytics Dashboard</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <Select value={dateRange} onValueChange={setDateRange} disabled={loading}>
+                <SelectTrigger className="w-40 border-slate-200">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="last_24_hours">Last 24 Hours</SelectItem>
+                  <SelectItem value="last_7_days">Last 7 Days</SelectItem>
+                  <SelectItem value="last_30_days">Last 30 Days</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={fetchInsights}
                 disabled={loading}
-                className="border-slate-200 focus-visible:ring-slate-400 text-base"
-              />
-            </div>
-
-            {/* Style & Mood Selection */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Poetic Style</label>
-                <Select value={style} onValueChange={setStyle} disabled={loading}>
-                  <SelectTrigger className="border-slate-200 focus:ring-slate-400">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STYLES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Mood</label>
-                <Select value={mood} onValueChange={setMood} disabled={loading}>
-                  <SelectTrigger className="border-slate-200 focus:ring-slate-400">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MOODS.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                {error}
-              </div>
-            )}
-
-            {/* Generate Button */}
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white h-11 text-base font-medium transition-colors"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating Poem...
-                </>
-              ) : (
-                'Create Poem'
-              )}
-            </Button>
-          </form>
-
-          {/* Poem Display Section */}
-          {poem && (
-            <>
-              <Separator className="my-8" />
-
-              <div className="space-y-4">
-                {/* Poem Text */}
-                <div className="bg-slate-50 rounded-lg p-8 border border-slate-200">
-                  <p className="text-slate-900 text-lg leading-8 whitespace-pre-wrap font-light">
-                    {poem}
-                  </p>
-                </div>
-
-                {/* Metadata Display */}
-                {poemMetadata && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <div className="bg-slate-50 rounded p-3">
-                      <p className="text-xs text-slate-500 font-medium">Style</p>
-                      <p className="text-sm text-slate-900 capitalize mt-1">
-                        {poemMetadata.result?.style || poemMetadata.style || style}
-                      </p>
-                    </div>
-                    <div className="bg-slate-50 rounded p-3">
-                      <p className="text-xs text-slate-500 font-medium">Mood</p>
-                      <p className="text-sm text-slate-900 capitalize mt-1">
-                        {poemMetadata.result?.mood || poemMetadata.mood || mood}
-                      </p>
-                    </div>
-                    {poemMetadata.metadata?.processing_time && (
-                      <div className="bg-slate-50 rounded p-3">
-                        <p className="text-xs text-slate-500 font-medium">Processing Time</p>
-                        <p className="text-sm text-slate-900 mt-1">
-                          {poemMetadata.metadata.processing_time}
-                        </p>
-                      </div>
-                    )}
-                    {poemMetadata.result?.line_count && (
-                      <div className="bg-slate-50 rounded p-3">
-                        <p className="text-xs text-slate-500 font-medium">Lines</p>
-                        <p className="text-sm text-slate-900 mt-1">
-                          {poemMetadata.result.line_count}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Fetching...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4" />
+                    Fetch Latest Insights
+                  </>
                 )}
-
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4">
-                  <Button
-                    onClick={handleCopy}
-                    variant="outline"
-                    className="flex-1 border-slate-300 text-slate-900 hover:bg-slate-50 h-10"
-                  >
-                    {copied ? (
-                      <>
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={handleShare}
-                    variant="outline"
-                    className="flex-1 border-slate-300 text-slate-900 hover:bg-slate-50 h-10"
-                  >
-                    <Share2 className="mr-2 h-4 w-4" />
-                    Share
-                  </Button>
-                </div>
-              </div>
-            </>
+              </Button>
+            </div>
+          </div>
+          {lastUpdated && (
+            <p className="text-xs text-slate-500 mt-3">Last updated: {lastUpdated}</p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {error && (
+          <Card className="mb-6 bg-red-50 border-red-200">
+            <CardContent className="pt-6">
+              <p className="text-red-800 text-sm">{error}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {loading && !insights && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+              <p className="text-slate-600">Searching LinkedIn for Agentic AI insights...</p>
+            </div>
+          </div>
+        )}
+
+        {insights && (
+          <div className="space-y-8">
+            {/* Quick Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card className="bg-white border-slate-200">
+                <CardContent className="pt-6">
+                  <div className="space-y-2">
+                    <p className="text-slate-600 text-sm font-medium">Posts Analyzed</p>
+                    <p className="text-3xl font-bold text-slate-900">
+                      {insights.result.engagement_metrics.total_posts_analyzed}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border-slate-200">
+                <CardContent className="pt-6">
+                  <div className="space-y-2">
+                    <p className="text-slate-600 text-sm font-medium">Avg Engagement</p>
+                    <p className="text-3xl font-bold text-slate-900">
+                      {Math.round(insights.result.engagement_metrics.avg_likes)}
+                    </p>
+                    <p className="text-xs text-slate-500">likes per post</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border-slate-200">
+                <CardContent className="pt-6">
+                  <div className="space-y-2">
+                    <p className="text-slate-600 text-sm font-medium">Sentiment</p>
+                    <p className="text-3xl font-bold text-green-600">
+                      {insights.result.sentiment_analysis.positive}%
+                    </p>
+                    <p className="text-xs text-slate-500">positive</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border-slate-200">
+                <CardContent className="pt-6">
+                  <div className="space-y-2">
+                    <p className="text-slate-600 text-sm font-medium">Confidence</p>
+                    <p className="text-3xl font-bold text-blue-600">
+                      {Math.round(insights.confidence * 100)}%
+                    </p>
+                    <p className="text-xs text-slate-500">analysis quality</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Trending Topics */}
+            <Card className="bg-white border-slate-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <TrendingUp className="h-5 w-5 text-blue-600" />
+                  Trending Topics
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {insights.result.trending_topics.slice(0, 5).map((topic) => (
+                    <div key={topic.rank} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl font-bold text-slate-400 w-8 text-center">{topic.rank}</span>
+                          <div>
+                            <p className="font-semibold text-slate-900">{topic.topic}</p>
+                            <p className="text-xs text-slate-600">{topic.post_count} posts</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs">
+                          {topic.trend_direction} {topic.trend_percentage}%
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Content Themes */}
+            <Card className="bg-white border-slate-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Zap className="h-5 w-5 text-amber-600" />
+                  Content Themes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {insights.result.content_themes.map((theme, idx) => (
+                    <div key={idx}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-slate-900">{theme.theme}</span>
+                        <span className="text-sm font-semibold text-blue-600">{theme.percentage}%</span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all"
+                          style={{ width: `${theme.percentage}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{theme.post_count} posts</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Sentiment Analysis */}
+            <Card className="bg-white border-slate-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <MessageCircle className="h-5 w-5 text-purple-600" />
+                  Sentiment Analysis
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <p className="text-sm text-slate-600 mb-2">Positive</p>
+                    <p className="text-3xl font-bold text-green-600">{insights.result.sentiment_analysis.positive}%</p>
+                  </div>
+                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <p className="text-sm text-slate-600 mb-2">Neutral</p>
+                    <p className="text-3xl font-bold text-gray-600">{insights.result.sentiment_analysis.neutral}%</p>
+                  </div>
+                  <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                    <p className="text-sm text-slate-600 mb-2">Negative</p>
+                    <p className="text-3xl font-bold text-red-600">{insights.result.sentiment_analysis.negative}%</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Key Influencers */}
+            <Card className="bg-white border-slate-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Users className="h-5 w-5 text-orange-600" />
+                  Key Influencers
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {insights.result.key_influencers.slice(0, 5).map((influencer) => (
+                    <div key={influencer.rank} className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-blue-600 text-white text-sm font-bold">
+                              #{influencer.rank}
+                            </span>
+                            <div>
+                              <p className="font-semibold text-slate-900">{influencer.name}</p>
+                              <p className="text-xs text-slate-600">{influencer.title}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 mt-3">
+                        <div className="text-xs">
+                          <p className="text-slate-600 mb-1">Posts</p>
+                          <p className="font-semibold text-slate-900">{influencer.post_count}</p>
+                        </div>
+                        <div className="text-xs">
+                          <p className="text-slate-600 mb-1">Avg Engagement</p>
+                          <p className="font-semibold text-slate-900">{influencer.avg_engagement}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Top Posts */}
+            <Card className="bg-white border-slate-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Eye className="h-5 w-5 text-indigo-600" />
+                  Top Posts
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {insights.result.top_posts.slice(0, 5).map((post, idx) => (
+                    <div key={idx} className={`p-4 rounded-lg border ${getSentimentColor(post.sentiment)}`}>
+                      <div className="mb-3">
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="font-semibold text-slate-900 flex-1 line-clamp-2">{post.title}</h3>
+                          <Badge className={`ml-2 ${getSentimentBadgeColor(post.sentiment)} capitalize`}>
+                            {post.sentiment}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-slate-700 mb-2">{post.author}</p>
+                        <p className="text-xs text-slate-600 mb-3">{post.author_title} • {post.published_date}</p>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-3 pt-3 border-t border-inherit">
+                        <div className="text-center">
+                          <p className="text-xs text-slate-600 mb-1 flex items-center justify-center gap-1">
+                            <Heart className="h-3 w-3" /> Likes
+                          </p>
+                          <p className="font-semibold text-slate-900 text-sm">{post.engagement.likes}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-slate-600 mb-1 flex items-center justify-center gap-1">
+                            <MessageCircle className="h-3 w-3" /> Comments
+                          </p>
+                          <p className="font-semibold text-slate-900 text-sm">{post.engagement.comments}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-slate-600 mb-1">Shares</p>
+                          <p className="font-semibold text-slate-900 text-sm">{post.engagement.shares}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-slate-600 mb-1 flex items-center justify-center gap-1">
+                            <Eye className="h-3 w-3" /> Views
+                          </p>
+                          <p className="font-semibold text-slate-900 text-sm">{post.engagement.views}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Metadata */}
+            <Card className="bg-slate-50 border-slate-200">
+              <CardHeader>
+                <CardTitle className="text-sm">Analysis Metadata</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-slate-600 text-xs mb-1">Processing Time</p>
+                    <p className="font-semibold text-slate-900">{insights.metadata.processing_time}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-600 text-xs mb-1">Timestamp</p>
+                    <p className="font-semibold text-slate-900 text-xs">{new Date(insights.metadata.timestamp).toLocaleDateString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-600 text-xs mb-1">Posts Analyzed</p>
+                    <p className="font-semibold text-slate-900">{insights.metadata.posts_analyzed}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-600 text-xs mb-1">Sources</p>
+                    <p className="font-semibold text-slate-900 text-xs">{insights.metadata.sources_used.join(', ')}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </main>
     </div>
   )
 }
